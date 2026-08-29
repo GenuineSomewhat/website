@@ -60,7 +60,16 @@ class CleanURLHandler(SimpleHTTPRequestHandler):
             self.path = '/' + file_path
             super().do_GET()
         else:
-            self.send_error(404, "Not Found")
+            # Try to serve custom 404.html
+            if Path('404.html').is_file():
+                self.path = '/404.html'
+                self.send_response(404)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                with open('404.html', 'rb') as f:
+                    self.wfile.write(f.read())
+            else:
+                self.send_error(404, "Not Found")
     
     def log_message(self, format, *args):
         """Custom logging"""

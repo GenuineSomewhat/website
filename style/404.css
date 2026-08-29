@@ -1,0 +1,10 @@
+body {
+    background-color: bisque;
+}
+
+img {
+    display: block;
+    margin: 0 auto;
+    width: 50%;
+    height: auto;
+}
