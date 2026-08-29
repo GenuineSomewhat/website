@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="style/music.css">
+        <link rel="icon" type="image/png" href="assets/faviconmusic.png">
+        <title>Genuine Somewhat - Music</title>
+    </head>
+
+     <body>
+        <h1>Music</h1>
+
+        <h3>I like to make music. I'd say it's definitely my passion.</h3>
+
+        <section class="media-area">
+            <div class="now-playing">
+                <p class="now-playing-label">Now playing</p>
+                <p id="now-playing-title" class="now-playing-title">Select a track</p>
+            </div>
+
+            <div class="player" id="main-player">
+                <button class="player-button" id="play-button" type="button">Play</button>
+                <input class="player-progress" id="player-progress" type="range" min="0" max="100" value="0" step="0.1">
+                <span class="player-time" id="player-time">0:00 / 0:00</span>
+            </div>
+
+            <audio id="player-audio" class="player-audio" preload="none"></audio>
+        </section>
+
+        <div id="track-list" class="track-list">
+            <p>Loading tracks...</p>
+        </div>
+
+        <a href="/">
+<button class="floating-button">back to home</button>
+        </a>
+
+        <script src="https://cdn.jsdelivr.net/npm/jsmediatags@3.9.7/dist/jsmediatags.min.js"></script>
+        <script>
+            const repoOwner = "GenuineSomewhat";
+            const repoName = "Music-of-the-Paper-Realm";
+            const remixRepoName = "Music-of-the-Paper-Realm-Lowkenuine-Remix";
+            const repoPath = "";
+            const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${repoPath}`;
+            const remixApiUrl = `https://api.github.com/repos/${repoOwner}/${remixRepoName}/contents/${repoPath}`;
+            const audioExtensions = ["mp3", "wav", "ogg", "m4a", "flac"];
+
+            const trackList = document.getElementById("track-list");
+            const nowPlayingTitle = document.getElementById("now-playing-title");
+            const audio = document.getElementById("player-audio");
+            const playButton = document.getElementById("play-button");
+            const progress = document.getElementById("player-progress");
+            const time = document.getElementById("player-time");
+            let currentTrack = null;
+            const selectedVersion = {};
+            let audioFiles = [];
+
+            function isAudioFile(name) {
+                const parts = name.split(".");
+                if (parts.length < 2) {
+                    return false;
+                }
+                const ext = parts[parts.length - 1].toLowerCase();
+                return audioExtensions.includes(ext);
+            }
+
+            function formatTitle(tags, fallback) {
+                if (!tags) {
+                    return fallback;
+                }
+                const title = typeof tags.title === "string" ? tags.title.trim() : "";
+                const artist = typeof tags.artist === "string" ? tags.artist.trim() : "";
+                if (title && artist) {
+                    return `${title} - ${artist}`;
+                }
+                return title || fallback;
+            }
+
+            function formatTime(seconds) {
+                if (!Number.isFinite(seconds)) {
+                    return "0:00";
+                }
+                const minutes = Math.floor(seconds / 60);
+                const remaining = Math.floor(seconds % 60);
+                const padded = remaining < 10 ? `0${remaining}` : `${remaining}`;
+                return `${minutes}:${padded}`;
+            }
+
+            function updateTime() {
+                const current = formatTime(audio.currentTime);
+                const total = formatTime(audio.duration);
+                time.textContent = `${current} / ${total}`;
+            }
+
+            function updateProgress() {
+                if (!Number.isFinite(audio.duration) || audio.duration === 0) {
+                    progress.value = "0";
+                    return;
+                }
+                progress.value = ((audio.currentTime / audio.duration) * 100).toFixed(2);
+            }
+
+            function setNowPlaying(title) {
+                nowPlayingTitle.textContent = title;
+            }
+
+            function loadMetadataTitle(file, onDone) {
+                if (!window.jsmediatags) {
+                    onDone(file.name);
+                    return;
+                }
+
+                const handleSuccess = (tag) => {
+                    onDone(formatTitle(tag.tags, file.name));
+                };
+
+                const handleFailure = () => {
+                    onDone(file.name);
+                };
+
+                window.jsmediatags.read(file.download_url, {
+                    onSuccess: handleSuccess,
+                    onError: () => {
+                        fetch(file.download_url)
+                            .then((response) => {
+                                if (!response.ok) {
+                                    throw new Error("Failed to download audio for metadata");
+                                }
+                                return response.blob();
+                            })
+                            .then((blob) => {
+                                window.jsmediatags.read(blob, {
+                                    onSuccess: handleSuccess,
+                                    onError: handleFailure
+                                });
+                            })
+                            .catch(handleFailure);
+                    }
+                });
+            }
+
+            playButton.addEventListener("click", () => {
+                if (!audio.src) {
+                    return;
+                }
+                if (audio.paused) {
+                    audio.play();
+                } else {
+                    audio.pause();
+                }
+            });
+
+            audio.addEventListener("play", () => {
+                playButton.textContent = "Pause";
+                updateAllTrackButtons();
+            });
+
+            audio.addEventListener("pause", () => {
+                playButton.textContent = "Play";
+                updateAllTrackButtons();
+            });
+
+            audio.addEventListener("timeupdate", () => {
+                updateProgress();
+                updateTime();
+            });
+
+            audio.addEventListener("loadedmetadata", () => {
+                updateProgress();
+                updateTime();
+            });
+
+            audio.addEventListener("ended", () => {
+                playButton.textContent = "Play";
+            });
+
+            progress.addEventListener("input", () => {
+                if (!Number.isFinite(audio.duration) || audio.duration === 0) {
+                    return;
+                }
+                const nextTime = (Number(progress.value) / 100) * audio.duration;
+                audio.currentTime = nextTime;
+            });
+
+            const resetAllToOriginal = () => {
+                // Reset all selectedVersion entries to 'original'
+                Object.keys(selectedVersion).forEach(key => {
+                    selectedVersion[key] = 'original';
+                });
+                
+                // Reset all dropdown indicators in the UI
+                document.querySelectorAll('.version-option').forEach(option => {
+                    option.classList.toggle('active', option.dataset.version === 'original');
+                });
+                
+                // Reset all mode images to original
+                document.querySelectorAll('.mode-image').forEach(img => {
+                    img.src = 'assets/music/original.png';
+                    img.alt = 'Original';
+                });
+            };
+
+            const updateAllTrackButtons = () => {
+                document.querySelectorAll('.track-play-button').forEach(btn => {
+                    const track = btn.closest('.track-with-dropdown');
+                    const trackFile = audioFiles && audioFiles.find(f => f.name === track.dataset.filename);
+                    if (trackFile === currentTrack) {
+                        btn.textContent = audio.paused ? "▶" : "⏸";
+                    } else {
+                        btn.textContent = "▶";
+                    }
+                });
+            };
+
+            Promise.all([
+                fetch(apiUrl),
+                fetch(remixApiUrl)
+            ])
+            .then(responses => Promise.all(responses.map(r => {
+                if (!r.ok) throw new Error(`GitHub API error: ${r.status}`);
+                return r.json();
+            })))
+            .then(([items, remixItems]) => {
+                // Create a map of remixes by matching base filename
+                const remixMap = {};
+                if (Array.isArray(remixItems)) {
+                    remixItems.forEach(item => {
+                        if (item.type === "file" && isAudioFile(item.name)) {
+                            // Remove -LKR from filename to match with original
+                            const baseName = item.name.replace(/-LKR(?=\.[^.]+$)/, '');
+                            remixMap[baseName] = item;
+                        }
+                    });
+                }
+
+                if (!Array.isArray(items)) {
+                    throw new Error("Unexpected API response. Is repoPath a folder?");
+                }
+
+                audioFiles = items.filter((item) => item.type === "file" && isAudioFile(item.name));
+
+                if (audioFiles.length === 0) {
+                    trackList.innerHTML = "<p>No audio files found at the repo root.</p>";
+                    return;
+                }
+
+                trackList.innerHTML = "";
+
+                audioFiles.forEach((file) => {
+                    const hasRemix = remixMap[file.name];
+                    selectedVersion[file.name] = 'original';
+
+                    const container = document.createElement("div");
+                    container.className = "track-with-dropdown";
+                    container.dataset.filename = file.name;
+
+                    const wrapper = document.createElement("div");
+                    wrapper.className = "track";
+
+                    const titleContainer = document.createElement("div");
+                    titleContainer.className = "track-button-container";
+
+                    const playButton = document.createElement("button");
+                    playButton.className = "track-play-button";
+                    playButton.type = "button";
+                    playButton.textContent = "▶";
+                    playButton.title = "Play track";
+
+                    const title = document.createElement("div");
+                    title.className = "track-title";
+                    title.textContent = "Loading metadata...";
+
+                    const updateAudioSource = () => {
+                        const selectedFile = selectedVersion[file.name] === 'remix' ? remixMap[file.name] : file;
+                        audio.src = selectedFile.download_url;
+                    };
+
+                    playButton.addEventListener("click", () => {
+                        if (currentTrack !== file) {
+                            currentTrack = file;
+                            updateAudioSource();
+                            audio.currentTime = 0;
+                            updateProgress();
+                            updateTime();
+                            
+                            // Load metadata from the selected version (remix or original)
+                            const selectedFile = selectedVersion[file.name] === 'remix' ? remixMap[file.name] : file;
+                            loadMetadataTitle(selectedFile, setNowPlaying);
+                            audio.play();
+                            
+                            // If this song doesn't have a remix, force switch back to original mode
+                            if (!hasRemix) {
+                                selectedVersion[file.name] = 'original';
+                                resetAllToOriginal();
+                                document.body.classList.remove('remix-mode');
+                            }
+                        } else {
+                            audio.paused ? audio.play() : audio.pause();
+                        }
+                    });
+
+                    const downloadButton = document.createElement("a");
+                    downloadButton.className = "download-button";
+                    downloadButton.textContent = "Download";
+
+                    const updateDownloadButton = () => {
+                        const selectedFile = selectedVersion[file.name] === 'remix' ? remixMap[file.name] : file;
+                        downloadButton.href = selectedFile.download_url;
+                        downloadButton.download = selectedFile.name;
+                    };
+                    updateDownloadButton();
+
+                    const buttonContainer = document.createElement("div");
+                    buttonContainer.className = "track-control-buttons";
+                    buttonContainer.appendChild(downloadButton);
+
+                    if (hasRemix) {
+                        const dropdownBox = document.createElement("div");
+                        dropdownBox.className = "version-dropdown-box";
+
+                        const dropdownButton = document.createElement("button");
+                        dropdownButton.className = "version-dropdown-button";
+                        dropdownButton.type = "button";
+                        dropdownButton.title = "Toggle version";
+
+                        const modeImage = document.createElement("img");
+                        modeImage.src = "assets/music/original.png";
+                        modeImage.alt = "Original";
+                        modeImage.className = "mode-image";
+                        dropdownButton.appendChild(modeImage);
+
+                        const badge = document.createElement("div");
+                        badge.className = "version-badge";
+                        badge.textContent = "2";
+                        dropdownButton.appendChild(badge);
+
+                        const dropdownMenu = document.createElement("div");
+                        dropdownMenu.className = "version-dropdown-menu";
+
+                        const originalOption = document.createElement("button");
+                        originalOption.className = "version-option";
+                        originalOption.type = "button";
+                        originalOption.textContent = "Original";
+                        originalOption.dataset.version = "original";
+
+                        const remixOption = document.createElement("button");
+                        remixOption.className = "version-option";
+                        remixOption.type = "button";
+                        remixOption.textContent = "Lowkenuine";
+                        remixOption.dataset.version = "remix";
+
+                        const selectVersion = (version) => {
+                            selectedVersion[file.name] = version;
+                            originalOption.classList.toggle("active", version === "original");
+                            remixOption.classList.toggle("active", version === "remix");
+                            
+                            // Update the mode image
+                            modeImage.src = version === "remix" ? "assets/music/remix.png" : "assets/music/original.png";
+                            modeImage.alt = version === "remix" ? "Remix" : "Original";
+                            updateDownloadButton();
+                            
+                            // Update remix mode based on if any remix is selected
+                            const hasAnyRemixSelected = Object.values(selectedVersion).some(v => v === 'remix');
+                            document.body.classList.toggle('remix-mode', hasAnyRemixSelected);
+                            
+                            if (currentTrack === file) {
+                                updateAudioSource();
+                                audio.currentTime = 0;
+                                updateProgress();
+                                updateTime();
+                                if (version === 'remix') {
+                                    loadMetadataTitle(remixMap[file.name], setNowPlaying);
+                                } else {
+                                    loadMetadataTitle(file, setNowPlaying);
+                                }
+                                audio.play();
+                            }
+                            dropdownMenu.classList.remove("open");
+                        };
+
+                        originalOption.addEventListener("click", () => selectVersion("original"));
+                        remixOption.addEventListener("click", () => selectVersion("remix"));
+
+                        dropdownButton.addEventListener("click", () => {
+                            dropdownMenu.classList.toggle("open");
+                        });
+
+                        document.addEventListener("click", (e) => {
+                            if (!dropdownBox.contains(e.target)) {
+                                dropdownMenu.classList.remove("open");
+                            }
+                        });
+
+                        dropdownMenu.appendChild(originalOption);
+                        dropdownMenu.appendChild(remixOption);
+                        originalOption.classList.add("active");
+
+                        dropdownBox.appendChild(dropdownButton);
+                        dropdownBox.appendChild(dropdownMenu);
+                        buttonContainer.appendChild(dropdownBox);
+                    }
+
+                    loadMetadataTitle(file, (metadataTitle) => {
+                        title.textContent = metadataTitle;
+                        if (!currentTrack) {
+                            setNowPlaying("Select a track");
+                        }
+                    });
+
+                    titleContainer.appendChild(playButton);
+                    titleContainer.appendChild(title);
+                    titleContainer.appendChild(buttonContainer);
+                    wrapper.appendChild(titleContainer);
+                    container.appendChild(wrapper);
+
+                    trackList.appendChild(container);
+                });
+
+                updateAllTrackButtons();
+            })
+            .catch((error) => {
+                trackList.innerHTML = `<p>Could not load tracks. ${error.message}</p>`;
+            });
+        </script>
+
+        <p>The code for the audio playback is made with AI. None of my music or the text aspects of the site are.</p>
+    </body>
+</html>
