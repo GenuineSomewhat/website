@@ -80,7 +80,7 @@ h2 {
 
 /* Grey hover variant */
 .button-48.grey-hover:before {
-  background-color: #007474;
+  background-color: grey;
 }
 
 /* Mobile responsiveness */
