@@ -78,6 +78,11 @@ h2 {
   position: relative;
 }
 
+/* Grey hover variant */
+.button-48.grey-hover:before {
+  background-color: grey;
+}
+
 /* Mobile responsiveness */
 @media (max-width: 768px) {
   h1 {

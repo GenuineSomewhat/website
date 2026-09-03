@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="style/patch.css">
+        <link rel="icon" type="image/png" href="assets/faviconpatch.png">
+        <title>Clanker Patch Maker</title>
+    </head>
+    <body>
+        <h1>Clanker Patch Maker</h1>
+        
+        <div class="container">
+            <div class="card">
+                <h2>Create a Patch Image</h2>
+                <p class="subtitle">Upload a file and encode it as a patch image for the bot</p>
+                
+                <!-- File Upload Section -->
+                <div class="upload-section">
+                    <div class="drop-zone" id="dropZone">
+                        <div class="drop-content">
+                            <div class="upload-icon">📁</div>
+                            <p>Drag and drop a file here or click to select</p>
+                            <small>Any file type supported</small>
+                        </div>
+                        <input type="file" id="fileInput" hidden>
+                    </div>
+                    
+                    <div id="fileInfo" class="file-info" style="display: none;">
+                        <div class="file-details">
+                            <div class="file-name" id="fileName"></div>
+                            <div class="file-size" id="fileSize"></div>
+                        </div>
+                        <button id="clearFile" class="btn-secondary">Clear</button>
+                    </div>
+                </div>
+                
+                <!-- Folder Path Section -->
+                <div class="form-group">
+                    <label for="folderPath">Target Folder Path</label>
+                    <input 
+                        type="text" 
+                        id="folderPath" 
+                        placeholder="e.g., /Audio, /lib/utils, /sounds"
+                        value="/Audio"
+                    >
+                    <small>This is the folder where the file will be placed when the patch is applied</small>
+                </div>
+                
+                <!-- Create Patch Button -->
+                <button id="createBtn" class="btn-primary" disabled>
+                    ✨ Create Patch Image
+                </button>
+                
+                <!-- Progress Section -->
+                <div id="progress" class="progress-section" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">Encoding...</div>
+                </div>
+                
+                <!-- Status Messages -->
+                <div id="status" class="status-message" style="display: none;"></div>
+                
+                <!-- Download Section -->
+                <div id="downloadSection" class="download-section" style="display: none;">
+                    <div class="success-message">
+                        ✅ Patch created successfully!
+                    </div>
+                    <div class="patch-info" id="patchInfo"></div>
+                    <button id="downloadBtn" class="btn-primary">
+                        ⬇️ Download Patch Image
+                    </button>
+                    <button id="createAnother" class="btn-secondary">
+                        Create Another
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Info Section -->
+            <div class="card info-card">
+                <h3>How It Works</h3>
+                <ol>
+                    <li><strong>Upload a file</strong> - Any type of file (audio, image, code, etc.)</li>
+                    <li><strong>Specify folder path</strong> - Where should the file go in the bot? (e.g., /Audio)</li>
+                    <li><strong>Create patch</strong> - The file is encoded into a PNG image</li>
+                    <li><strong>Download</strong> - Use the patch image with the bot's !patch command</li>
+                </ol>
+                
+                <h3>Using Patches</h3>
+                <p>Send the patch image to the bot with the <code>!patch</code> command:</p>
+                <code class="code-block">!patch</code>
+                <p>The bot will extract and place the file in the specified folder automatically.</p>
+            </div>
+        </div>
+        
+        <a href="/">
+            <button class="floating-button">back to home</button>
+        </a>
+
+        <script src="js/patch-encoder.js"></script>
+
+        <p>The code for the patch image making is made with AI. None of my music or the text aspects of the site are.</p>
+    </body>
+</html>
