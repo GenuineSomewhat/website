@@ -1,19 +1,17 @@
 /**
- * Patch Encoder - Client-side patch image creator
- * Encodes files into PNG images with metadata
+ * Patch Encoder - Client communicates with server-side patch encoder
  */
 
 class PatchEncoder {
     constructor() {
         this.file = null;
-        this.fileData = null;
     }
 
     /**
-     * Convert file to patch image
+     * Send file to server for encoding
      */
     async encodeFile(folderPath) {
-        if (!this.file || !this.fileData) {
+        if (!this.file) {
             throw new Error('No file selected');
         }
 
@@ -22,68 +20,35 @@ class PatchEncoder {
         }
 
         return new Promise((resolve, reject) => {
-            const filename = this.file.name;
-            
-            try {
-                // Create header: n_<filename>-p_<folder_path>
-                const headerStr = `n_${filename}-p_${folderPath}`;
-                const headerBytes = new TextEncoder().encode(headerStr);
-                
-                // Combine: header + null byte + file data
-                const patchData = new Uint8Array(headerBytes.length + 1 + this.fileData.length);
-                patchData.set(headerBytes, 0);
-                patchData[headerBytes.length] = 0; // Null delimiter
-                patchData.set(this.fileData, headerBytes.length + 1);
-                
-                // Calculate image dimensions
-                // Each pixel = 3 bytes (RGB), so pixels needed = ceil(patchData.length / 3)
-                const pixelCount = Math.ceil(patchData.length / 3);
-                const width = Math.ceil(Math.sqrt(pixelCount));
-                const height = Math.ceil(pixelCount / width);
-                
-                // Create image data
-                const imageData = this.createImageData(width, height, patchData);
-                
-                // Create canvas and draw
-                const canvas = document.createElement('canvas');
-                canvas.width = width;
-                canvas.height = height;
-                const ctx = canvas.getContext('2d');
-                ctx.putImageData(imageData, 0, 0);
-                
-                // Convert canvas to blob
-                canvas.toBlob((blob) => {
-                    resolve({
-                        blob: blob,
-                        filename: filename,
-                        folderPath: folderPath,
-                        fileSize: this.fileData.length,
-                        patchSize: patchData.length,
-                        dimensions: `${width}x${height}`
-                    });
-                }, 'image/png');
-            } catch (error) {
-                reject(error);
-            }
-        });
-    }
+            const formData = new FormData();
+            formData.append('file', this.file);
+            formData.append('folderPath', folderPath);
 
-    /**
-     * Create ImageData from patch bytes
-     */
-    createImageData(width, height, patchData) {
-        const imageDataArray = new Uint8ClampedArray(width * height * 4);
-        
-        let byteIndex = 0;
-        for (let i = 0; i < width * height * 4; i += 4) {
-            // RGB channels
-            imageDataArray[i] = byteIndex < patchData.length ? patchData[byteIndex++] : 0;     // R
-            imageDataArray[i + 1] = byteIndex < patchData.length ? patchData[byteIndex++] : 0; // G
-            imageDataArray[i + 2] = byteIndex < patchData.length ? patchData[byteIndex++] : 0; // B
-            imageDataArray[i + 3] = 255; // Alpha (always opaque)
-        }
-        
-        return new ImageData(imageDataArray, width, height);
+            fetch('/api/encode-patch', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => {
+                        throw new Error(err.error || 'Failed to encode patch');
+                    });
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                resolve({
+                    blob: blob,
+                    filename: this.file.name,
+                    folderPath: folderPath,
+                    fileSize: this.file.size,
+                    patchSize: blob.size
+                });
+            })
+            .catch(error => {
+                reject(error);
+            });
+        });
     }
 
     /**
@@ -96,19 +61,11 @@ class PatchEncoder {
                 return;
             }
             
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                this.file = file;
-                this.fileData = new Uint8Array(e.target.result);
-                resolve({
-                    name: file.name,
-                    size: file.size
-                });
-            };
-            reader.onerror = () => {
-                reject(new Error('Failed to read file'));
-            };
-            reader.readAsArrayBuffer(file);
+            this.file = file;
+            resolve({
+                name: file.name,
+                size: file.size
+            });
         });
     }
 
@@ -226,20 +183,12 @@ document.addEventListener('DOMContentLoaded', () => {
             progress.style.display = 'block';
             status.style.display = 'none';
             downloadSection.style.display = 'none';
-            
-            // Simulate progress
-            let progressValue = 0;
-            const progressInterval = setInterval(() => {
-                if (progressValue < 90) {
-                    progressValue += Math.random() * 30;
-                }
-                progressFill.style.width = progressValue + '%';
-            }, 100);
+            progressText.textContent = 'Sending to server...';
+            progressFill.style.width = '30%';
             
             // Encode file
             const result = await encoder.encodeFile(folderPath);
             
-            clearInterval(progressInterval);
             progressFill.style.width = '100%';
             progressText.textContent = 'Complete!';
             
@@ -252,7 +201,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div><strong>Target:</strong> <code>${result.folderPath}</code></div>
                 <div><strong>File Size:</strong> ${formatBytes(result.fileSize)}</div>
                 <div><strong>Patch Size:</strong> ${formatBytes(result.patchSize)}</div>
-                <div><strong>Image Dimensions:</strong> ${result.dimensions} px</div>
             `;
             
             // Show download section after a brief delay
@@ -262,7 +210,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 500);
             
         } catch (error) {
-            clearInterval(progressInterval);
             progress.style.display = 'none';
             createBtn.disabled = false;
             showStatus('Error creating patch: ' + error.message, 'error');

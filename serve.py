@@ -1,94 +1,107 @@
 #!/usr/bin/env python3
 """
-Clean URL web server using only Python standard library (no Flask needed)
-Handles: /music -> music.html, / -> index.html
+Flask web server for Clanker website with patch encoding API.
+Serves static files and provides API endpoint for creating patch images.
 Run with: python3 serve.py
 """
 
-from http.server import HTTPServer, SimpleHTTPRequestHandler
+from flask import Flask, request, send_file, jsonify
 from pathlib import Path
-import urllib.parse
+import io
 import os
+from patch_encoder import encode_file_to_patch
 
-class CleanURLHandler(SimpleHTTPRequestHandler):
-    """HTTP handler that supports clean URLs without .html extensions"""
+app = Flask(__name__, static_folder='.', static_url_path='')
+
+
+@app.route('/')
+def index():
+    """Serve index.html"""
+    return send_file('index.html')
+
+
+@app.route('/<path:path>')
+def serve_page(path):
+    """Serve pages without .html extension"""
+    # Try direct file first
+    if Path(path).is_file():
+        return send_file(path)
     
-    def do_GET(self):
-        """Handle GET requests with clean URL logic"""
-        # Parse the request path
-        parsed_path = urllib.parse.urlparse(self.path)
-        path = parsed_path.path
-        
-        # Remove query string and fragments for file lookup
-        if '?' in path:
-            path = path.split('?')[0]
-        if '#' in path:
-            path = path.split('#')[0]
-        
-        # Normalize path
-        path = path.lstrip('/')
-        
-        # Security: prevent directory traversal
-        normalized = Path(path).resolve()
-        base = Path.cwd().resolve()
-        try:
-            normalized.relative_to(base)
-        except ValueError:
-            self.send_error(403, "Forbidden")
-            return
-        
-        # Try different file resolution strategies
-        file_path = None
-        
-        # Strategy 1: Root path -> index.html
-        if path == '' or path == '/':
-            if Path('index.html').is_file():
-                file_path = 'index.html'
-        else:
-            # Strategy 2: Direct file match (already has extension)
-            if Path(path).is_file():
-                file_path = path
-            # Strategy 3: Add .html extension (clean URL)
-            elif Path(f"{path}.html").is_file():
-                file_path = f"{path}.html"
-            # Strategy 4: Directory with index.html
-            elif Path(path).is_dir() and Path(f"{path}/index.html").is_file():
-                file_path = f"{path}/index.html"
-        
-        # Serve the file or 404
-        if file_path:
-            self.path = '/' + file_path
-            super().do_GET()
-        else:
-            # Try to serve custom 404.html
-            if Path('404.html').is_file():
-                self.path = '/404.html'
-                self.send_response(404)
-                self.send_header('Content-type', 'text/html')
-                self.end_headers()
-                with open('404.html', 'rb') as f:
-                    self.wfile.write(f.read())
-            else:
-                self.send_error(404, "Not Found")
+    # Try with .html extension
+    html_file = Path(f"{path}.html")
+    if html_file.is_file():
+        return send_file(str(html_file))
     
-    def log_message(self, format, *args):
-        """Custom logging"""
-        print(f"[{self.client_address[0]}] {format % args}")
+    # Try directory with index.html
+    dir_path = Path(path)
+    if dir_path.is_dir() and (dir_path / 'index.html').is_file():
+        return send_file(str(dir_path / 'index.html'))
+    
+    # 404
+    if Path('404.html').is_file():
+        with open('404.html', 'r') as f:
+            return f.read(), 404
+    return "Not found", 404
+
+
+@app.route('/api/encode-patch', methods=['POST'])
+def encode_patch():
+    """
+    API endpoint to encode a file into a patch image.
+    
+    POST /api/encode-patch
+    Form data:
+        - file: file upload
+        - folderPath: target folder (e.g., /Audio)
+    
+    Returns:
+        PNG image file
+    """
+    try:
+        # Check for file
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        if not file or file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        # Get folder path
+        folder_path = request.form.get('folderPath', '/').strip()
+        if not folder_path:
+            folder_path = '/'
+        
+        print(f"[API] Encoding patch - file: {file.filename}, folder: {folder_path}")
+        
+        # Read file data
+        file_data = file.read()
+        print(f"[API] File size: {len(file_data)} bytes")
+        
+        # Encode to patch
+        patch_png = encode_file_to_patch(file_data, file.filename, folder_path)
+        
+        # Return PNG file
+        png_buffer = io.BytesIO(patch_png)
+        return send_file(
+            png_buffer,
+            mimetype='image/png',
+            as_attachment=True,
+            download_name=f"{file.filename}.patch.png"
+        )
+    
+    except Exception as e:
+        print(f"[API ERROR] {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 
 if __name__ == '__main__':
     os.chdir(Path(__file__).parent)
     
-    server_address = ('0.0.0.0', 8000)
-    httpd = HTTPServer(server_address, CleanURLHandler)
-    
     print("🚀 Website server running at http://localhost:8000")
-    print("   Clean URLs enabled (no .html needed)")
-    print("   /music -> music.html")
-    print("   / -> index.html")
+    print("   /patch -> Patch maker")
+    print("   /api/encode-patch -> Patch encoding API")
     print("   Press Ctrl+C to stop")
     
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\n✓ Server stopped")
-        httpd.shutdown()
+    app.run(host='0.0.0.0', port=8000, debug=False)
