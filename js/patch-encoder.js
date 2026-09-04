@@ -19,53 +19,57 @@ class PatchEncoder {
             throw new Error('Folder path is required');
         }
 
-        return new Promise((resolve, reject) => {
-            const formData = new FormData();
-            formData.append('file', this.file);
-            formData.append('folderPath', folderPath);
+        const formData = new FormData();
+        formData.append('file', this.file);
+        formData.append('folderPath', folderPath);
 
-            fetch('/api/encode-patch', {
+        try {
+            const response = await fetch('/api/encode-patch', {
                 method: 'POST',
                 body: formData
-            })
-            .then(async response => {
-                if (!response.ok) {
-                    // Try to parse as JSON first, fall back to text if it's HTML
-                    const contentType = response.headers.get('content-type');
-                    let errorMessage = 'Failed to encode patch';
-                    
-                    try {
-                        if (contentType && contentType.includes('application/json')) {
-                            const err = await response.json();
-                            errorMessage = err.error || errorMessage;
-                        } else {
-                            // Server returned HTML (error page), extract useful info
-                            const text = await response.text();
-                            console.error('Server error response:', text);
-                            errorMessage = `Server error (${response.status}): ${response.statusText}`;
-                        }
-                    } catch (parseError) {
-                        console.error('Error parsing response:', parseError);
+            });
+
+            console.log('[API Response] Status:', response.status, 'OK:', response.ok);
+            console.log('[API Response] Content-Type:', response.headers.get('content-type'));
+            
+            if (!response.ok) {
+                // Try to parse as JSON first, fall back to text if it's HTML
+                const contentType = response.headers.get('content-type') || '';
+                let errorMessage = 'Failed to encode patch';
+                
+                try {
+                    if (contentType.includes('application/json')) {
+                        const err = await response.json();
+                        errorMessage = err.error || errorMessage;
+                    } else {
+                        // Server returned HTML (error page) or other format
+                        const text = await response.text();
+                        console.error('Server error response:', text.substring(0, 200));
                         errorMessage = `Server error (${response.status}): ${response.statusText}`;
                     }
-                    
-                    throw new Error(errorMessage);
+                } catch (parseError) {
+                    console.error('Error parsing response:', parseError);
+                    errorMessage = `Server error (${response.status}): ${response.statusText}`;
                 }
-                return response.blob();
-            })
-            .then(blob => {
-                resolve({
-                    blob: blob,
-                    filename: this.file.name,
-                    folderPath: folderPath,
-                    fileSize: this.file.size,
-                    patchSize: blob.size
-                });
-            })
-            .catch(error => {
-                reject(error);
-            });
-        });
+                
+                throw new Error(errorMessage);
+            }
+
+            // Get blob
+            const blob = await response.blob();
+            console.log('[API Response] Blob received, size:', blob.size);
+
+            return {
+                blob: blob,
+                filename: this.file.name,
+                folderPath: folderPath,
+                fileSize: this.file.size,
+                patchSize: blob.size
+            };
+        } catch (error) {
+            console.error('[API Error]', error);
+            throw error;
+        }
     }
 
     /**
@@ -101,192 +105,226 @@ class PatchEncoder {
     }
 }
 
-// Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('[PatchEncoder] Initializing...');
-    const encoder = new PatchEncoder();
+// Wait for DOM to be fully loaded
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initPatchEncoder);
+} else {
+    // DOM is already loaded
+    initPatchEncoder();
+}
+
+function initPatchEncoder() {
+    console.log('[PatchEncoder] === Initialization Started ===');
     
-    // DOM Elements
-    const dropZone = document.getElementById('dropZone');
-    const fileInput = document.getElementById('fileInput');
-    const fileInfo = document.getElementById('fileInfo');
-    const fileName = document.getElementById('fileName');
-    const fileSize = document.getElementById('fileSize');
-    const clearFileBtn = document.getElementById('clearFile');
-    const folderPathInput = document.getElementById('folderPath');
-    const createBtn = document.getElementById('createBtn');
-    const progress = document.getElementById('progress');
-    const progressFill = document.getElementById('progressFill');
-    const progressText = document.getElementById('progressText');
-    const status = document.getElementById('status');
-    const downloadSection = document.getElementById('downloadSection');
-    const downloadBtn = document.getElementById('downloadBtn');
-    const createAnother = document.getElementById('createAnother');
-    const patchInfo = document.getElementById('patchInfo');
-    
-    // Verify all elements loaded
-    if (!dropZone || !fileInput) {
-        console.error('[PatchEncoder] ERROR: Missing required DOM elements!');
-        return;
-    }
-    console.log('[PatchEncoder] DOM elements loaded successfully');
-    
-    let patchBlob = null;
-    let patchFilename = null;
-    
-    // File input click
-    dropZone.addEventListener('click', () => {
-        console.log('[PatchEncoder] Drop zone clicked');
-        fileInput.click();
-    });
-    
-    // Drag and drop
-    dropZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.classList.add('dragover');
-        console.log('[PatchEncoder] Dragover detected');
-    });
-    
-    dropZone.addEventListener('dragleave', () => {
-        dropZone.classList.remove('dragover');
-        console.log('[PatchEncoder] Dragleave detected');
-    });
-    
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        console.log('[PatchEncoder] Drop detected, files:', e.dataTransfer.files.length);
-        dropZone.classList.remove('dragover');
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            handleFileSelect(files[0]);
-        }
-    });
-    
-    // File input change
-    fileInput.addEventListener('change', (e) => {
-        console.log('[PatchEncoder] File input changed, files:', e.target.files.length);
-        if (e.target.files.length > 0) {
-            handleFileSelect(e.target.files[0]);
-        }
-    });
-    
-    // Handle file selection
-    async function handleFileSelect(file) {
-        try {
-            console.log('[PatchEncoder] File selected:', file.name, file.size, 'bytes');
-            const info = await encoder.setFile(file);
-            fileName.textContent = `📄 ${info.name}`;
-            fileSize.textContent = `${formatBytes(info.size)}`;
-            fileInfo.style.display = 'flex';
-            dropZone.style.display = 'none';
-            createBtn.disabled = false;
-            status.style.display = 'none';
-            console.log('[PatchEncoder] File loaded successfully');
-        } catch (error) {
-            console.error('[PatchEncoder] Error in handleFileSelect:', error);
-            showStatus('Error reading file: ' + error.message, 'error');
-        }
-    }
-    
-    // Clear file
-    clearFileBtn.addEventListener('click', () => {
-        encoder.file = null;
-        encoder.fileData = null;
-        fileInput.value = '';
-        fileInfo.style.display = 'none';
-        dropZone.style.display = 'block';
-        createBtn.disabled = true;
-        status.style.display = 'none';
-    });
-    
-    // Create patch
-    createBtn.addEventListener('click', async () => {
-        const folderPath = folderPathInput.value.trim();
+    try {
+        const encoder = new PatchEncoder();
         
-        console.log('[PatchEncoder] Create patch clicked - folderPath:', folderPath, 'file:', encoder.file?.name);
+        // Get all required DOM elements
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+        const clearFileBtn = document.getElementById('clearFile');
+        const folderPathInput = document.getElementById('folderPath');
+        const createBtn = document.getElementById('createBtn');
+        const progress = document.getElementById('progress');
+        const progressFill = document.getElementById('progressFill');
+        const progressText = document.getElementById('progressText');
+        const status = document.getElementById('status');
+        const downloadSection = document.getElementById('downloadSection');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const createAnother = document.getElementById('createAnother');
+        const patchInfo = document.getElementById('patchInfo');
         
-        if (!folderPath) {
-            showStatus('Please specify a folder path', 'error');
+        // Check if all required elements exist
+        if (!dropZone) {
+            console.error('[PatchEncoder] ERROR: dropZone element not found!');
+            return;
+        }
+        if (!fileInput) {
+            console.error('[PatchEncoder] ERROR: fileInput element not found!');
             return;
         }
         
-        if (!encoder.file) {
-            showStatus('Please select a file', 'error');
-            return;
+        console.log('[PatchEncoder] ✓ All DOM elements found');
+        
+        let patchBlob = null;
+        let patchFilename = null;
+        
+        // === Click to select file ===
+        dropZone.addEventListener('click', function(e) {
+            console.log('[Event] Drop zone clicked');
+            e.preventDefault();
+            fileInput.click();
+        });
+        
+        console.log('[PatchEncoder] ✓ Click handler attached to drop zone');
+        
+        // === Drag and drop ===
+        dropZone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('dragover');
+            console.log('[Event] Dragover detected');
+        });
+        
+        dropZone.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('dragover');
+            console.log('[Event] Dragleave detected');
+        });
+        
+        dropZone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('dragover');
+            console.log('[Event] Drop detected, files:', e.dataTransfer.files.length);
+            
+            if (e.dataTransfer.files.length > 0) {
+                const file = e.dataTransfer.files[0];
+                handleFileSelect(file);
+            }
+        });
+        
+        console.log('[PatchEncoder] ✓ Drag and drop handlers attached');
+        
+        // === File input change ===
+        fileInput.addEventListener('change', function(e) {
+            console.log('[Event] File input changed, files:', e.target.files.length);
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+        
+        console.log('[PatchEncoder] ✓ File input handler attached');
+        
+        // === Handle file selection ===
+        function handleFileSelect(file) {
+            try {
+                console.log('[Handler] File selected:', file.name, '(' + file.size + ' bytes)');
+                encoder.file = file;
+                
+                fileName.textContent = '📄 ' + file.name;
+                fileSize.textContent = formatBytes(file.size);
+                fileInfo.style.display = 'flex';
+                dropZone.style.display = 'none';
+                createBtn.disabled = false;
+                status.style.display = 'none';
+                
+                console.log('[Handler] ✓ File loaded successfully');
+            } catch (error) {
+                console.error('[Handler] Error:', error);
+                showStatus('Error reading file: ' + error.message, 'error');
+            }
         }
         
-        try {
+        // === Clear file ===
+        clearFileBtn.addEventListener('click', function() {
+            console.log('[Event] Clear file clicked');
+            encoder.file = null;
+            fileInput.value = '';
+            fileInfo.style.display = 'none';
+            dropZone.style.display = 'block';
             createBtn.disabled = true;
-            progress.style.display = 'block';
             status.style.display = 'none';
-            downloadSection.style.display = 'none';
-            progressText.textContent = 'Sending to server...';
-            progressFill.style.width = '30%';
+        });
+        
+        console.log('[PatchEncoder] ✓ Clear button handler attached');
+        
+        // === Create patch ===
+        createBtn.addEventListener('click', async function() {
+            const folderPath = folderPathInput.value.trim();
+            console.log('[Event] Create patch clicked - folder:', folderPath);
             
-            console.log('[PatchEncoder] Sending file to server...');
-            // Encode file
-            const result = await encoder.encodeFile(folderPath);
+            if (!folderPath) {
+                showStatus('Please specify a folder path', 'error');
+                return;
+            }
             
-            console.log('[PatchEncoder] Server response received, patch size:', result.patchSize);
-            progressFill.style.width = '100%';
-            progressText.textContent = 'Complete!';
+            if (!encoder.file) {
+                showStatus('Please select a file', 'error');
+                return;
+            }
             
-            patchBlob = result.blob;
-            patchFilename = result.filename;
-            
-            // Show patch info
-            patchInfo.innerHTML = `
-                <div><strong>Filename:</strong> <code>${result.filename}</code></div>
-                <div><strong>Target:</strong> <code>${result.folderPath}</code></div>
-                <div><strong>File Size:</strong> ${formatBytes(result.fileSize)}</div>
-                <div><strong>Patch Size:</strong> ${formatBytes(result.patchSize)}</div>
-            `;
-            
-            // Show download section after a brief delay
-            setTimeout(() => {
+            try {
+                createBtn.disabled = true;
+                progress.style.display = 'block';
+                status.style.display = 'none';
+                downloadSection.style.display = 'none';
+                progressText.textContent = 'Sending to server...';
+                progressFill.style.width = '30%';
+                
+                console.log('[Handler] Sending file to server...');
+                const result = await encoder.encodeFile(folderPath);
+                console.log('[Handler] ✓ Server response received');
+                
+                progressFill.style.width = '100%';
+                progressText.textContent = 'Complete!';
+                
+                patchBlob = result.blob;
+                patchFilename = result.filename;
+                
+                patchInfo.innerHTML = '<div><strong>Filename:</strong> <code>' + result.filename + '</code></div>' +
+                    '<div><strong>Target:</strong> <code>' + result.folderPath + '</code></div>' +
+                    '<div><strong>File Size:</strong> ' + formatBytes(result.fileSize) + '</div>' +
+                    '<div><strong>Patch Size:</strong> ' + formatBytes(result.patchSize) + '</div>';
+                
+                setTimeout(function() {
+                    progress.style.display = 'none';
+                    downloadSection.style.display = 'block';
+                }, 500);
+                
+            } catch (error) {
+                console.error('[Handler] Error creating patch:', error);
                 progress.style.display = 'none';
-                downloadSection.style.display = 'block';
-            }, 500);
-            
-        } catch (error) {
-            console.error('[PatchEncoder] Error creating patch:', error);
+                createBtn.disabled = false;
+                showStatus('Error creating patch: ' + error.message, 'error');
+            }
+        });
+        
+        console.log('[PatchEncoder] ✓ Create button handler attached');
+        
+        // === Download patch ===
+        downloadBtn.addEventListener('click', function() {
+            console.log('[Event] Download clicked');
+            if (patchBlob && patchFilename) {
+                encoder.downloadPatch(patchBlob, patchFilename);
+            }
+        });
+        
+        // === Create another ===
+        createAnother.addEventListener('click', function() {
+            console.log('[Event] Create another clicked');
+            clearFileBtn.click();
+            downloadSection.style.display = 'none';
             progress.style.display = 'none';
             createBtn.disabled = false;
-            showStatus('Error creating patch: ' + error.message, 'error');
+            folderPathInput.focus();
+        });
+        
+        console.log('[PatchEncoder] ✓ Download handlers attached');
+        
+        // === Helper functions ===
+        function showStatus(message, type) {
+            status.textContent = message;
+            status.className = 'status-message ' + (type || 'error');
+            status.style.display = 'block';
+            console.log('[Status] ' + (type || 'error').toUpperCase() + ': ' + message);
         }
-    });
-    
-    // Download patch
-    downloadBtn.addEventListener('click', () => {
-        if (patchBlob && patchFilename) {
-            encoder.downloadPatch(patchBlob, patchFilename);
+        
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return (Math.round(bytes / Math.pow(k, i) * 100) / 100) + ' ' + sizes[i];
         }
-    });
-    
-    // Create another
-    createAnother.addEventListener('click', () => {
-        clearFileBtn.click();
-        downloadSection.style.display = 'none';
-        progress.style.display = 'none';
-        createBtn.disabled = false;
-        folderPathInput.focus();
-    });
-    
-    // Show status message
-    function showStatus(message, type = 'error') {
-        status.textContent = message;
-        status.className = `status-message ${type}`;
-        status.style.display = 'block';
+        
+        console.log('[PatchEncoder] === ✓ Initialization Complete ===');
+        
+    } catch (error) {
+        console.error('[PatchEncoder] FATAL ERROR during initialization:', error);
     }
-    
-    // Format bytes for display
-    function formatBytes(bytes) {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-    }
-});
+}

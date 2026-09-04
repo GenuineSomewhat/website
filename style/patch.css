@@ -70,6 +70,15 @@ p {
     margin-bottom: 25px;
 }
 
+/* Hidden file input */
+#fileInput {
+    display: none !important;
+    visibility: hidden;
+    position: absolute;
+    width: 0;
+    height: 0;
+}
+
 .drop-zone {
     border: 3px dashed #ccc;
     border-radius: 8px;
