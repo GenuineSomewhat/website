@@ -1,5 +1,5 @@
 /**
- * Patch Encoder - Client communicates with server-side patch encoder
+ * Patch Encoder - Encodes files into patch PNG images entirely in browser
  */
 
 class PatchEncoder {
@@ -8,7 +8,7 @@ class PatchEncoder {
     }
 
     /**
-     * Send file to server for encoding
+     * Encode a file to a patch PNG image in the browser
      */
     async encodeFile(folderPath) {
         if (!this.file) {
@@ -19,57 +19,91 @@ class PatchEncoder {
             throw new Error('Folder path is required');
         }
 
-        const formData = new FormData();
-        formData.append('file', this.file);
-        formData.append('folderPath', folderPath);
-
-        try {
-            const response = await fetch('/api/encode-patch', {
-                method: 'POST',
-                body: formData
-            });
-
-            console.log('[API Response] Status:', response.status, 'OK:', response.ok);
-            console.log('[API Response] Content-Type:', response.headers.get('content-type'));
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
             
-            if (!response.ok) {
-                // Try to parse as JSON first, fall back to text if it's HTML
-                const contentType = response.headers.get('content-type') || '';
-                let errorMessage = 'Failed to encode patch';
-                
+            reader.onload = (event) => {
                 try {
-                    if (contentType.includes('application/json')) {
-                        const err = await response.json();
-                        errorMessage = err.error || errorMessage;
-                    } else {
-                        // Server returned HTML (error page) or other format
-                        const text = await response.text();
-                        console.error('Server error response:', text.substring(0, 200));
-                        errorMessage = `Server error (${response.status}): ${response.statusText}`;
+                    console.log('[Encoder] File loaded, size:', event.total);
+                    const fileData = new Uint8Array(event.target.result);
+                    
+                    // Create header: n_<filename>-p_<folder_path>
+                    const headerStr = `n_${this.file.name}-p_${folderPath}`;
+                    const headerBytes = new TextEncoder().encode(headerStr);
+                    
+                    console.log('[Encoder] Header:', headerStr, '(' + headerBytes.length + ' bytes)');
+                    
+                    // Combine: header + null byte + file data
+                    const patchData = new Uint8Array(headerBytes.length + 1 + fileData.length);
+                    patchData.set(headerBytes, 0);
+                    patchData[headerBytes.length] = 0; // null byte separator
+                    patchData.set(fileData, headerBytes.length + 1);
+                    
+                    console.log('[Encoder] Total patch data:', patchData.length, 'bytes');
+                    
+                    // Calculate image dimensions
+                    const pixelCount = Math.ceil(patchData.length / 3);
+                    const width = Math.max(1, Math.floor(Math.sqrt(pixelCount)));
+                    const height = Math.ceil(pixelCount / width);
+                    
+                    console.log('[Encoder] Image dimensions:', width + 'x' + height);
+                    
+                    // Create canvas for drawing
+                    const canvas = document.createElement('canvas');
+                    canvas.width = width;
+                    canvas.height = height;
+                    
+                    const ctx = canvas.getContext('2d');
+                    const imageData = ctx.createImageData(width, height);
+                    const pixelData = imageData.data;
+                    
+                    // Fill pixels with patch data (RGBA format)
+                    let byteIndex = 0;
+                    for (let i = 0; i < pixelData.length; i += 4) {
+                        // RGB channels get patch data
+                        pixelData[i] = byteIndex < patchData.length ? patchData[byteIndex++] : 0;     // R
+                        pixelData[i + 1] = byteIndex < patchData.length ? patchData[byteIndex++] : 0; // G
+                        pixelData[i + 2] = byteIndex < patchData.length ? patchData[byteIndex++] : 0; // B
+                        pixelData[i + 3] = 255; // A (always opaque)
                     }
-                } catch (parseError) {
-                    console.error('Error parsing response:', parseError);
-                    errorMessage = `Server error (${response.status}): ${response.statusText}`;
+                    
+                    // Put image data on canvas
+                    ctx.putImageData(imageData, 0, 0);
+                    
+                    console.log('[Encoder] Canvas created and filled');
+                    
+                    // Convert canvas to blob (PNG)
+                    canvas.toBlob((blob) => {
+                        if (!blob) {
+                            reject(new Error('Failed to create PNG blob'));
+                            return;
+                        }
+                        
+                        console.log('[Encoder] PNG blob created:', blob.size, 'bytes');
+                        
+                        resolve({
+                            blob: blob,
+                            filename: this.file.name,
+                            folderPath: folderPath,
+                            fileSize: this.file.size,
+                            patchSize: blob.size
+                        });
+                    }, 'image/png');
+                    
+                } catch (error) {
+                    console.error('[Encoder] Error during encoding:', error);
+                    reject(error);
                 }
-                
-                throw new Error(errorMessage);
-            }
-
-            // Get blob
-            const blob = await response.blob();
-            console.log('[API Response] Blob received, size:', blob.size);
-
-            return {
-                blob: blob,
-                filename: this.file.name,
-                folderPath: folderPath,
-                fileSize: this.file.size,
-                patchSize: blob.size
             };
-        } catch (error) {
-            console.error('[API Error]', error);
-            throw error;
-        }
+            
+            reader.onerror = (error) => {
+                console.error('[Encoder] File read error:', error);
+                reject(new Error('Failed to read file'));
+            };
+            
+            console.log('[Encoder] Starting file read...');
+            reader.readAsArrayBuffer(this.file);
+        });
     }
 
     /**
@@ -253,12 +287,12 @@ function initPatchEncoder() {
                 progress.style.display = 'block';
                 status.style.display = 'none';
                 downloadSection.style.display = 'none';
-                progressText.textContent = 'Sending to server...';
-                progressFill.style.width = '30%';
+                progressText.textContent = 'Creating patch image...';
+                progressFill.style.width = '50%';
                 
-                console.log('[Handler] Sending file to server...');
+                console.log('[Handler] Encoding file locally...');
                 const result = await encoder.encodeFile(folderPath);
-                console.log('[Handler] ✓ Server response received');
+                console.log('[Handler] ✓ Patch encoding complete');
                 
                 progressFill.style.width = '100%';
                 progressText.textContent = 'Complete!';
