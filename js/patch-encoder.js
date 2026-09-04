@@ -2,6 +2,8 @@
  * Patch Encoder - Encodes files into patch PNG images entirely in browser
  */
 
+console.log('[PatchEncoder] Script loaded');
+
 class PatchEncoder {
     constructor() {
         this.file = null;
@@ -137,14 +139,6 @@ class PatchEncoder {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
     }
-}
-
-// Wait for DOM to be fully loaded
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initPatchEncoder);
-} else {
-    // DOM is already loaded
-    initPatchEncoder();
 }
 
 function initPatchEncoder() {
@@ -361,4 +355,11 @@ function initPatchEncoder() {
     } catch (error) {
         console.error('[PatchEncoder] FATAL ERROR during initialization:', error);
     }
+}
+
+// Initialize when DOM is ready or if already loaded
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initPatchEncoder);
+} else {
+    initPatchEncoder();
 }
