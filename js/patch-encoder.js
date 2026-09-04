@@ -103,6 +103,7 @@ class PatchEncoder {
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
+    console.log('[PatchEncoder] Initializing...');
     const encoder = new PatchEncoder();
     
     // DOM Elements
@@ -123,24 +124,39 @@ document.addEventListener('DOMContentLoaded', () => {
     const createAnother = document.getElementById('createAnother');
     const patchInfo = document.getElementById('patchInfo');
     
+    // Verify all elements loaded
+    if (!dropZone || !fileInput) {
+        console.error('[PatchEncoder] ERROR: Missing required DOM elements!');
+        return;
+    }
+    console.log('[PatchEncoder] DOM elements loaded successfully');
+    
     let patchBlob = null;
     let patchFilename = null;
     
     // File input click
-    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('click', () => {
+        console.log('[PatchEncoder] Drop zone clicked');
+        fileInput.click();
+    });
     
     // Drag and drop
     dropZone.addEventListener('dragover', (e) => {
         e.preventDefault();
+        e.stopPropagation();
         dropZone.classList.add('dragover');
+        console.log('[PatchEncoder] Dragover detected');
     });
     
     dropZone.addEventListener('dragleave', () => {
         dropZone.classList.remove('dragover');
+        console.log('[PatchEncoder] Dragleave detected');
     });
     
     dropZone.addEventListener('drop', (e) => {
         e.preventDefault();
+        e.stopPropagation();
+        console.log('[PatchEncoder] Drop detected, files:', e.dataTransfer.files.length);
         dropZone.classList.remove('dragover');
         const files = e.dataTransfer.files;
         if (files.length > 0) {
@@ -150,6 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // File input change
     fileInput.addEventListener('change', (e) => {
+        console.log('[PatchEncoder] File input changed, files:', e.target.files.length);
         if (e.target.files.length > 0) {
             handleFileSelect(e.target.files[0]);
         }
@@ -158,6 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle file selection
     async function handleFileSelect(file) {
         try {
+            console.log('[PatchEncoder] File selected:', file.name, file.size, 'bytes');
             const info = await encoder.setFile(file);
             fileName.textContent = `📄 ${info.name}`;
             fileSize.textContent = `${formatBytes(info.size)}`;
@@ -165,7 +183,9 @@ document.addEventListener('DOMContentLoaded', () => {
             dropZone.style.display = 'none';
             createBtn.disabled = false;
             status.style.display = 'none';
+            console.log('[PatchEncoder] File loaded successfully');
         } catch (error) {
+            console.error('[PatchEncoder] Error in handleFileSelect:', error);
             showStatus('Error reading file: ' + error.message, 'error');
         }
     }
@@ -185,6 +205,8 @@ document.addEventListener('DOMContentLoaded', () => {
     createBtn.addEventListener('click', async () => {
         const folderPath = folderPathInput.value.trim();
         
+        console.log('[PatchEncoder] Create patch clicked - folderPath:', folderPath, 'file:', encoder.file?.name);
+        
         if (!folderPath) {
             showStatus('Please specify a folder path', 'error');
             return;
@@ -203,9 +225,11 @@ document.addEventListener('DOMContentLoaded', () => {
             progressText.textContent = 'Sending to server...';
             progressFill.style.width = '30%';
             
+            console.log('[PatchEncoder] Sending file to server...');
             // Encode file
             const result = await encoder.encodeFile(folderPath);
             
+            console.log('[PatchEncoder] Server response received, patch size:', result.patchSize);
             progressFill.style.width = '100%';
             progressText.textContent = 'Complete!';
             
@@ -227,6 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 500);
             
         } catch (error) {
+            console.error('[PatchEncoder] Error creating patch:', error);
             progress.style.display = 'none';
             createBtn.disabled = false;
             showStatus('Error creating patch: ' + error.message, 'error');

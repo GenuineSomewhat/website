@@ -9,9 +9,20 @@ from flask import Flask, request, send_file, jsonify
 from pathlib import Path
 import io
 import os
+import traceback
 from patch_encoder import encode_file_to_patch
 
 app = Flask(__name__, static_folder='.', static_url_path='')
+
+# Register after_request handler for CORS headers
+@app.after_request
+def add_cors_headers(response):
+    """Add CORS headers to all responses"""
+    if request.path.startswith('/api/'):
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
 
 
 # Add error handler for API errors to ensure JSON responses
@@ -19,10 +30,10 @@ app = Flask(__name__, static_folder='.', static_url_path='')
 def handle_api_error(error):
     """Catch unhandled exceptions and return JSON for API routes"""
     if request.path.startswith('/api/'):
-        print(f"[API ERROR] Unhandled exception: {str(error)}")
-        import traceback
+        error_msg = str(error) if str(error) else 'Internal server error'
+        print(f"[API ERROR] Unhandled exception: {error_msg}")
         traceback.print_exc()
-        return jsonify({'error': str(error) or 'Internal server error'}), 500
+        return jsonify({'error': error_msg}), 500
     # For non-API routes, use default error handling
     raise error
 
@@ -57,7 +68,7 @@ def serve_page(path):
     return "Not found", 404
 
 
-@app.route('/api/encode-patch', methods=['POST'])
+@app.route('/api/encode-patch', methods=['POST', 'OPTIONS'])
 def encode_patch():
     """
     API endpoint to encode a file into a patch image.
@@ -70,13 +81,23 @@ def encode_patch():
     Returns:
         PNG image file or JSON error
     """
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        return '', 204
+    
     try:
+        print(f"[API] Request received - Content-Type: {request.content_type}")
+        
         # Check for file
         if 'file' not in request.files:
+            print("[API ERROR] No file in request.files")
             return jsonify({'error': 'No file provided'}), 400
         
         file = request.files['file']
+        print(f"[API] File object: {file}, filename: {file.filename}")
+        
         if not file or file.filename == '':
+            print("[API ERROR] File is None or empty filename")
             return jsonify({'error': 'No file selected'}), 400
         
         # Get folder path
@@ -89,15 +110,23 @@ def encode_patch():
         # Read file data
         file_data = file.read()
         if not file_data:
+            print("[API ERROR] File data is empty")
             return jsonify({'error': 'File is empty'}), 400
-            
-        print(f"[API] File size: {len(file_data)} bytes")
+        
+        print(f"[API] File size: {len(file_data)} bytes, file type: {type(file_data)}")
         
         # Encode to patch
-        patch_png = encode_file_to_patch(file_data, file.filename, folder_path)
+        try:
+            patch_png = encode_file_to_patch(file_data, file.filename, folder_path)
+            print(f"[API] Patch encoding succeeded, PNG size: {len(patch_png)} bytes")
+        except Exception as encode_error:
+            print(f"[API ERROR] Patch encoding failed: {encode_error}")
+            traceback.print_exc()
+            return jsonify({'error': f'Encoding failed: {str(encode_error)}'}), 500
         
         # Return PNG file
         png_buffer = io.BytesIO(patch_png)
+        print("[API] Sending PNG response")
         return send_file(
             png_buffer,
             mimetype='image/png',
@@ -106,8 +135,7 @@ def encode_patch():
         )
     
     except Exception as e:
-        print(f"[API ERROR] {str(e)}")
-        import traceback
+        print(f"[API ERROR] Unhandled exception: {str(e)}")
         traceback.print_exc()
         return jsonify({'error': str(e) or 'Internal server error'}), 500
 
