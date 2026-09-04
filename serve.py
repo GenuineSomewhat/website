@@ -14,6 +14,19 @@ from patch_encoder import encode_file_to_patch
 app = Flask(__name__, static_folder='.', static_url_path='')
 
 
+# Add error handler for API errors to ensure JSON responses
+@app.errorhandler(Exception)
+def handle_api_error(error):
+    """Catch unhandled exceptions and return JSON for API routes"""
+    if request.path.startswith('/api/'):
+        print(f"[API ERROR] Unhandled exception: {str(error)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(error) or 'Internal server error'}), 500
+    # For non-API routes, use default error handling
+    raise error
+
+
 @app.route('/')
 def index():
     """Serve index.html"""
@@ -55,7 +68,7 @@ def encode_patch():
         - folderPath: target folder (e.g., /Audio)
     
     Returns:
-        PNG image file
+        PNG image file or JSON error
     """
     try:
         # Check for file
@@ -75,6 +88,9 @@ def encode_patch():
         
         # Read file data
         file_data = file.read()
+        if not file_data:
+            return jsonify({'error': 'File is empty'}), 400
+            
         print(f"[API] File size: {len(file_data)} bytes")
         
         # Encode to patch
@@ -93,7 +109,7 @@ def encode_patch():
         print(f"[API ERROR] {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e) or 'Internal server error'}), 500
 
 
 if __name__ == '__main__':

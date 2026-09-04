@@ -28,11 +28,28 @@ class PatchEncoder {
                 method: 'POST',
                 body: formData
             })
-            .then(response => {
+            .then(async response => {
                 if (!response.ok) {
-                    return response.json().then(err => {
-                        throw new Error(err.error || 'Failed to encode patch');
-                    });
+                    // Try to parse as JSON first, fall back to text if it's HTML
+                    const contentType = response.headers.get('content-type');
+                    let errorMessage = 'Failed to encode patch';
+                    
+                    try {
+                        if (contentType && contentType.includes('application/json')) {
+                            const err = await response.json();
+                            errorMessage = err.error || errorMessage;
+                        } else {
+                            // Server returned HTML (error page), extract useful info
+                            const text = await response.text();
+                            console.error('Server error response:', text);
+                            errorMessage = `Server error (${response.status}): ${response.statusText}`;
+                        }
+                    } catch (parseError) {
+                        console.error('Error parsing response:', parseError);
+                        errorMessage = `Server error (${response.status}): ${response.statusText}`;
+                    }
+                    
+                    throw new Error(errorMessage);
                 }
                 return response.blob();
             })
